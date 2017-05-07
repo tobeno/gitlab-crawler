@@ -1,0 +1,5 @@
+<?php
+return [
+    'gitlab_api_url' => 'https://gitlab.com/api/v3/',
+    'gitlab_api_token' => ''
+];

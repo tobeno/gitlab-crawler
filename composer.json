@@ -1,0 +1,27 @@
+{
+    "name": "tobeno/gitlab-crawler",
+    "description": "A utility for crawling multiple gitlab repositories",
+    "minimum-stability": "stable",
+    "prefer-stable": true,
+    "license": "MIT",
+    "authors": [
+        {
+            "name": "Tobias Laber",
+            "email": "tobeno@gmx.de"
+        }
+    ],
+    "autoload": {
+        "psr-4": {
+            "Tobeno\\GitlabCrawler\\": "src/Tobeno/GitlabCrawler/"
+        }
+    },
+    "require": {
+        "php": ">=7.1",
+        "psr/log": "^1.0.0",
+        "m4tthumphrey/php-gitlab-api": "^7.15.0",
+        "monolog/monolog": "^1.22.1"
+    },
+    "require-dev": {
+        "codeception/codeception": "^2.0.0"
+    }
+}
