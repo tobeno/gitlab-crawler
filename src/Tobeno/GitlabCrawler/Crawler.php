@@ -49,6 +49,8 @@ class Crawler implements LoggerAwareInterface
      */
     public function crawl(string $expression): array
     {
+        $this->log('Crawling ' . $expression);
+
         $projects = $this->matchProjects($expression);
 
         $crawledFiles = [];
@@ -69,27 +71,15 @@ class Crawler implements LoggerAwareInterface
 
                 $this->log('Found branch ' . $branchName);
 
-
                 $file = $this->matchFile($projectId, $branchName, $expression);
             }
 
             if ($file) {
-                if ($file['encoding'] !== 'base64') {
-                    throw new \RuntimeException('Unknown file encoding ' . $file['encoding'] . ' found.');
-                }
-
                 $filePath = $file['file_path'];
 
                 $this->log('Found file ' . $filePath);
 
-                $crawledFile = new CrawledFile();
-                $crawledFile->setProjectId($projectId);
-                $crawledFile->setProjectName($projectName);
-                $crawledFile->setBranchName($branch['name']);
-                $crawledFile->setPath($filePath);
-                $crawledFile->setContents(base64_decode($file['content']));
-
-                $crawledFiles[] = $crawledFile;
+                $crawledFiles[] = $this->createCrawledFile($project, $branch, $file);
             }
         }
 
@@ -104,13 +94,12 @@ class Crawler implements LoggerAwareInterface
         $cacheKey = 'projects';
 
         if (!isset($this->cache[$cacheKey])) {
-            $projects = (function (array $projects) {
-                foreach ($projects as $project) {
-                    yield $project['path_with_namespace'] => $project;
-                }
-            })($this->projectsApi->accessible());
+            $projects = [];
+            foreach ($this->projectsApi->accessible() as $project) {
+                $projects[$project['path_with_namespace']] = $project;
+            }
 
-            $this->cache[$cacheKey] = iterator_to_array($projects);
+            $this->cache[$cacheKey] = $projects;
         }
 
         return $this->cache[$cacheKey];
@@ -125,13 +114,12 @@ class Crawler implements LoggerAwareInterface
         $cacheKey = 'branches:' . $projectId;
 
         if (!isset($this->cache[$cacheKey])) {
-            $branches = (function (array $branches) {
-                foreach ($branches as $branch) {
-                    yield $branch['name'] => $branch;
-                }
-            })($this->repositoriesApi->branches($projectId));
+            $branches = [];
+            foreach ($this->repositoriesApi->branches($projectId) as $branch) {
+                $branches[$branch['name']] = $branch;
+            }
 
-            $this->cache[$cacheKey] = iterator_to_array($branches);
+            $this->cache[$cacheKey] = $branches;
         }
 
         return $this->cache[$cacheKey];
@@ -147,15 +135,14 @@ class Crawler implements LoggerAwareInterface
         $cacheKey = 'tree:' . $projectId . ':' . $ref;
 
         if (!isset($this->cache[$cacheKey])) {
-            $branches = (function (array $tree) {
-                foreach ($tree as $item) {
-                    yield $item['path'] => $item;
-                }
-            })($this->repositoriesApi->tree($projectId, [
+            $tree = [];
+            foreach ($this->repositoriesApi->tree($projectId, [
                 'ref' => $ref
-            ]));
+            ]) as $item) {
+                $tree[$item['path']] = $item;
+            }
 
-            $this->cache[$cacheKey] = iterator_to_array($branches);
+            $this->cache[$cacheKey] = $tree;
         }
 
         return $this->cache[$cacheKey];
@@ -260,11 +247,32 @@ class Crawler implements LoggerAwareInterface
     /**
      * @param string $message
      */
-    public function log(string $message): void
+    private function log(string $message): void
     {
         if ($this->logger) {
             $this->logger->debug('Gitlab crawler: ' . $message);
         }
+    }
+
+    /**
+     * @param array $project
+     * @param array $branch
+     * @param array $file
+     * @return CrawledFile
+     */
+    private function createCrawledFile(array $project, array $branch, array $file): CrawledFile
+    {
+        if ($file['encoding'] !== 'base64') {
+            throw new \RuntimeException('Unknown file encoding ' . $file['encoding'] . ' found.');
+        }
+
+        $crawledFile = new CrawledFile();
+        $crawledFile->setProjectId($project['id']);
+        $crawledFile->setProjectName($project['path_with_namespace']);
+        $crawledFile->setBranchName($branch['name']);
+        $crawledFile->setPath($file['file_path']);
+        $crawledFile->setContents(base64_decode($file['content']));
+        return $crawledFile;
     }
 
 }
