@@ -1,7 +1,7 @@
 <?php
 
 
-namespace Tobeno\GitlabCrawler;
+namespace Tobeno\GitlabCrawler\Crawler\Result;
 
 
 class CrawledFile

@@ -1,28 +1,37 @@
 <?php
-require __DIR__ . '/../vendor/autoload.php';
+namespace Tobeno\GitlabCrawler;
 
-$rootPath = realpath(__DIR__ . '/..');
+/**
+ * @var \Gitlab\Client $client
+ * @var string $cachePath
+ */
+use Monolog\Handler\StreamHandler;
+use Symfony\Component\Cache\Adapter\FilesystemAdapter;
+use Tobeno\GitlabCrawler\Crawler\Expression\FileCrawlerExpression;
+use Tobeno\GitlabCrawler\Crawler\FileCrawler;
 
-$localPath = $rootPath . '/local';
-$cachePath = $localPath . '/cache';
-
-$previousCwd = getcwd();
-
-chdir($rootPath);
-
-$config = require $rootPath . '/config.local.php';
-
-$cache = new \Symfony\Component\Cache\Adapter\FilesystemAdapter('', 0, $cachePath);
-
-$client = new \Gitlab\Client($config['gitlab_api_url']);
-$client->authenticate($config['gitlab_api_token'], \Gitlab\Client::AUTH_URL_TOKEN);
+require __DIR__.'/setup.php';
 
 $logger = new \Monolog\Logger('app');
-$logger->pushHandler(new \Monolog\Handler\StreamHandler('php://stdout', \Monolog\Logger::DEBUG));
+$logger->pushHandler(new StreamHandler('php://stdout', \Monolog\Logger::DEBUG));
 
-$crawler = new \Tobeno\GitlabCrawler\Crawler($client, $cache);
+$cache = new FilesystemAdapter('', 0, $cachePath);
+//$cache->clear();
+
+$crawler = new FileCrawler($client, $cache);
 $crawler->setLogger($logger);
 
-$files = $crawler->crawl('tobeno/test*:master:README.md');
+$expression = FileCrawlerExpression::create(
+    'tobeno/test*',
+    'master',
+    ['composer.json', 'application/composer.json']
+);
 
-chdir($previousCwd);
+$files = $crawler->crawl($expression);
+
+$composerDefinitions = [];
+foreach ($files as $file) {
+    $composerDefinitions[$file->getProjectName()] = json_decode($file->getContents(), true);
+}
+
+var_dump($composerDefinitions);

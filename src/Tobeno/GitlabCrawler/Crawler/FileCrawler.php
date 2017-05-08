@@ -1,7 +1,7 @@
 <?php
 
 
-namespace Tobeno\GitlabCrawler;
+namespace Tobeno\GitlabCrawler\Crawler;
 
 
 use Gitlab\Client;
@@ -9,8 +9,10 @@ use Psr\Cache\CacheItemPoolInterface;
 use Psr\Log\LoggerAwareInterface;
 use Psr\Log\LoggerAwareTrait;
 use Symfony\Component\Cache\Adapter\ArrayAdapter;
+use Tobeno\GitlabCrawler\Crawler\Result\CrawledFile;
+use Tobeno\GitlabCrawler\Crawler\Expression\FileCrawlerExpression;
 
-class Crawler implements LoggerAwareInterface
+class FileCrawler implements LoggerAwareInterface, FileCrawlerInterface
 {
     use LoggerAwareTrait;
 
@@ -95,23 +97,26 @@ class Crawler implements LoggerAwareInterface
     }
 
     /**
-     * @param string $expression
-     * @return array
+     * @param string|FileCrawlerExpression $expression
+     * @return \Traversable|CrawledFile[]
      */
-    public function crawl(string $expression): array
+    public function crawl($expression): \Traversable
     {
-        $this->log('Crawling ' . $expression);
+
+        if (is_string($expression)) {
+            $expression = FileCrawlerExpression::parse($expression);
+        }
+
+        $this->log('Crawling '.$expression);
 
         $projects = $this->matchProjects($expression);
-
-        $crawledFiles = [];
 
         foreach ($projects as $project) {
             $projectId = (int)$project['id'];
 
             $projectName = $project['path_with_namespace'];
 
-            $this->log('Found project ' . $projectName . ' (ID: ' . $projectId . ')');
+            $this->log('Found project '.$projectName.' (ID: '.$projectId.')');
 
             $branch = $this->matchBranch($projectId, $expression);
 
@@ -120,7 +125,7 @@ class Crawler implements LoggerAwareInterface
             if ($branch) {
                 $branchName = $branch['name'];
 
-                $this->log('Found branch ' . $branchName);
+                $this->log('Found branch '.$branchName);
 
                 $file = $this->matchFile($projectId, $branchName, $expression);
             }
@@ -128,13 +133,11 @@ class Crawler implements LoggerAwareInterface
             if ($file) {
                 $filePath = $file['file_path'];
 
-                $this->log('Found file ' . $filePath);
+                $this->log('Found file '.$filePath);
 
-                $crawledFiles[] = $this->createCrawledFile($project, $branch, $file);
+                yield $this->createCrawledFile($project, $branch, $file);
             }
         }
-
-        return $crawledFiles;
     }
 
     /**
@@ -171,7 +174,7 @@ class Crawler implements LoggerAwareInterface
      */
     private function getBranches(int $projectId): array
     {
-        $cacheKey = 'branches.' . $projectId;
+        $cacheKey = 'branches.'.$projectId;
 
         $cacheItem = $this->cache->getItem($cacheKey);
 
@@ -191,19 +194,24 @@ class Crawler implements LoggerAwareInterface
     /**
      * @param int $projectId
      * @param null|string $ref
+     * @param null|string $path
      * @return array
      */
-    private function getTree(int $projectId, ?string $ref): array
+    private function getTree(int $projectId, string $ref = null, string $path = null): array
     {
-        $cacheKey = 'tree.' . $projectId . '.' . md5($ref);
+        $cacheKey = 'tree.'.$projectId.'.'.md5($ref.'.'.$path);
 
         $cacheItem = $this->cache->getItem($cacheKey);
 
         if (!$cacheItem->isHit()) {
             $tree = [];
-            foreach ($this->repositoriesApi->tree($projectId, [
-                'ref' => $ref
-            ]) as $item) {
+            foreach ($this->repositoriesApi->tree(
+                $projectId,
+                [
+                    'ref' => $ref,
+                    'recursive' => $path === null,
+                ]
+            ) as $item) {
                 $tree[$item['path']] = $item;
             }
 
@@ -215,34 +223,24 @@ class Crawler implements LoggerAwareInterface
     }
 
     /**
-     * @param string $expression
+     * @param FileCrawlerExpression $expression
      * @return array
      */
-    private function matchProjects(string $expression): array
+    private function matchProjects(FileCrawlerExpression $expression): array
     {
-        $fileParts = explode(':', $expression);
-        if (count($fileParts) !== 3) {
-            throw new \InvalidArgumentException('Invalid file given.');
-        }
-
-        $projects = $this->match($fileParts[0], $this->getProjects());
+        $projects = $this->match($expression->getProjects(), $this->getProjects());
 
         return $projects;
     }
 
     /**
      * @param int $projectId
-     * @param string $expression
+     * @param FileCrawlerExpression $expression
      * @return array|null
      */
-    private function matchBranch(int $projectId, string $expression): ?array
+    private function matchBranch(int $projectId, FileCrawlerExpression $expression): ?array
     {
-        $fileParts = explode(':', $expression);
-        if (count($fileParts) !== 3) {
-            throw new \InvalidArgumentException('Invalid file given.');
-        }
-
-        $branch = $this->matchOne($fileParts[1], $this->getBranches($projectId));
+        $branch = $this->matchOne($expression->getBranches(), $this->getBranches($projectId));
 
         return $branch;
     }
@@ -250,19 +248,14 @@ class Crawler implements LoggerAwareInterface
     /**
      * @param int $projectId
      * @param string $ref
-     * @param string $expression
+     * @param FileCrawlerExpression $expression
      * @return array|null
      */
-    private function matchFile(int $projectId, string $ref, string $expression): ?array
+    private function matchFile(int $projectId, string $ref, FileCrawlerExpression $expression): ?array
     {
         $matchedFile = null;
 
-        $fileParts = explode(':', $expression);
-        if (count($fileParts) !== 3) {
-            throw new \InvalidArgumentException('Invalid file given.');
-        }
-
-        $treeItem = $this->matchOne($fileParts[2], $this->getTree($projectId, $ref));
+        $treeItem = $this->matchOne($expression->getFiles(), $this->getTree($projectId, $ref));
 
         if ($treeItem) {
             $matchedFile = $this->repositoriesApi->getFile($projectId, $treeItem['path'], $ref);
@@ -272,34 +265,33 @@ class Crawler implements LoggerAwareInterface
     }
 
     /**
-     * @param string $pattern
+     * @param string[] $patterns
      * @param array $set
      * @return array|null
      */
-    private function matchOne(string $pattern, array $set): ?array
+    private function matchOne(array $patterns, array $set): ?array
     {
-        $matches = $this->match($pattern, $set);
+        $matches = $this->match($patterns, $set);
 
         return $matches ? reset($matches) : null;
     }
 
     /**
-     * @param string $pattern
+     * @param string[] $patterns
      * @param array $set
      * @return array
      */
-    private function match(string $pattern, array $set)
+    private function match(array $patterns, array $set)
     {
         $matches = [];
 
         $setKeys = array_keys($set);
 
-        $patterns = explode('|', $pattern);
         foreach ($patterns as $singlePattern) {
             $singlePattern = str_replace('*', '.*', preg_quote($singlePattern));
 
             foreach ($setKeys as $setKey) {
-                if (preg_match('~' . $singlePattern . '~', $setKey)) {
+                if (preg_match('~'.$singlePattern.'~', $setKey)) {
                     $match = $set[$setKey];
 
                     $matches[] = $match;
@@ -316,7 +308,7 @@ class Crawler implements LoggerAwareInterface
     private function log(string $message): void
     {
         if ($this->logger) {
-            $this->logger->debug('Gitlab crawler: ' . $message);
+            $this->logger->debug('Gitlab crawler: '.$message);
         }
     }
 
@@ -329,7 +321,7 @@ class Crawler implements LoggerAwareInterface
     private function createCrawledFile(array $project, array $branch, array $file): CrawledFile
     {
         if ($file['encoding'] !== 'base64') {
-            throw new \RuntimeException('Unknown file encoding ' . $file['encoding'] . ' found.');
+            throw new \RuntimeException('Unknown file encoding '.$file['encoding'].' found.');
         }
 
         $crawledFile = new CrawledFile();
@@ -338,6 +330,7 @@ class Crawler implements LoggerAwareInterface
         $crawledFile->setBranchName($branch['name']);
         $crawledFile->setPath($file['file_path']);
         $crawledFile->setContents(base64_decode($file['content']));
+
         return $crawledFile;
     }
 
