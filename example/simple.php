@@ -3,13 +3,16 @@ require __DIR__ . '/../vendor/autoload.php';
 
 $rootPath = realpath(__DIR__ . '/..');
 
-$localPath = $rootPath . DIRECTORY_SEPARATOR . 'local';
+$localPath = $rootPath . '/local';
+$cachePath = $localPath . '/cache';
 
 $previousCwd = getcwd();
 
 chdir($rootPath);
 
-$config = require __DIR__ . '/../config.local.php';
+$config = require $rootPath . '/config.local.php';
+
+$cache = new \Symfony\Component\Cache\Adapter\FilesystemAdapter('', 0, $cachePath);
 
 $client = new \Gitlab\Client($config['gitlab_api_url']);
 $client->authenticate($config['gitlab_api_token'], \Gitlab\Client::AUTH_URL_TOKEN);
@@ -17,7 +20,7 @@ $client->authenticate($config['gitlab_api_token'], \Gitlab\Client::AUTH_URL_TOKE
 $logger = new \Monolog\Logger('app');
 $logger->pushHandler(new \Monolog\Handler\StreamHandler('php://stdout', \Monolog\Logger::DEBUG));
 
-$crawler = new \Tobeno\GitlabCrawler\Crawler($client);
+$crawler = new \Tobeno\GitlabCrawler\Crawler($client, $cache);
 $crawler->setLogger($logger);
 
 $files = $crawler->crawl('tobeno/test*:master:README.md');

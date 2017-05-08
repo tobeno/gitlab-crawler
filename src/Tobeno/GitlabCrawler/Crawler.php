@@ -5,12 +5,21 @@ namespace Tobeno\GitlabCrawler;
 
 
 use Gitlab\Client;
+use Psr\Cache\CacheItemPoolInterface;
 use Psr\Log\LoggerAwareInterface;
 use Psr\Log\LoggerAwareTrait;
+use Symfony\Component\Cache\Adapter\ArrayAdapter;
 
 class Crawler implements LoggerAwareInterface
 {
     use LoggerAwareTrait;
+
+    const CACHE_LIFETIME = 24 * 3600;
+
+    /**
+     * @var int
+     */
+    private $cacheLifetime = self::CACHE_LIFETIME;
 
     /**
      * @var \Gitlab\Api\Repositories
@@ -28,19 +37,61 @@ class Crawler implements LoggerAwareInterface
     private $client;
 
     /**
-     * @var array
+     * @var CacheItemPoolInterface|null
      */
-    private $cache = [];
+    private $cache;
 
     /**
      * Crawler constructor.
      * @param Client $client
+     * @param CacheItemPoolInterface|null $cache
      */
-    public function __construct(Client $client)
+    public function __construct(Client $client, CacheItemPoolInterface $cache = null)
     {
         $this->client = $client;
         $this->repositoriesApi = $client->api('repositories');
         $this->projectsApi = $client->api('projects');
+        $this->cache = $cache ?: new ArrayAdapter();
+    }
+
+    /**
+     * @return Client
+     */
+    public function getClient(): Client
+    {
+        return $this->client;
+    }
+
+    /**
+     * @return null|CacheItemPoolInterface
+     */
+    public function getCache(): ?CacheItemPoolInterface
+    {
+        return $this->cache;
+    }
+
+    /**
+     * @param null|CacheItemPoolInterface $cache
+     */
+    public function setCache(?CacheItemPoolInterface $cache)
+    {
+        $this->cache = $cache;
+    }
+
+    /**
+     * @return int
+     */
+    public function getCacheLifetime(): int
+    {
+        return $this->cacheLifetime;
+    }
+
+    /**
+     * @param int $cacheLifetime
+     */
+    public function setCacheLifetime(int $cacheLifetime)
+    {
+        $this->cacheLifetime = $cacheLifetime;
     }
 
     /**
@@ -93,16 +144,25 @@ class Crawler implements LoggerAwareInterface
     {
         $cacheKey = 'projects';
 
-        if (!isset($this->cache[$cacheKey])) {
+        $cacheItem = $this->cache->getItem($cacheKey);
+
+        if (!$cacheItem->isHit()) {
             $projects = [];
-            foreach ($this->projectsApi->accessible() as $project) {
-                $projects[$project['path_with_namespace']] = $project;
+
+            $page = 1;
+            while (($accessibleProjects = $this->projectsApi->accessible($page))) {
+                foreach ($accessibleProjects as $project) {
+                    $projects[$project['path_with_namespace']] = $project;
+                }
+
+                $page++;
             }
 
-            $this->cache[$cacheKey] = $projects;
+            $cacheItem->set($projects)->expiresAfter($this->cacheLifetime);
+            $this->cache->save($cacheItem);
         }
 
-        return $this->cache[$cacheKey];
+        return $cacheItem->get();
     }
 
     /**
@@ -111,18 +171,21 @@ class Crawler implements LoggerAwareInterface
      */
     private function getBranches(int $projectId): array
     {
-        $cacheKey = 'branches:' . $projectId;
+        $cacheKey = 'branches.' . $projectId;
 
-        if (!isset($this->cache[$cacheKey])) {
+        $cacheItem = $this->cache->getItem($cacheKey);
+
+        if (!$cacheItem->isHit()) {
             $branches = [];
             foreach ($this->repositoriesApi->branches($projectId) as $branch) {
                 $branches[$branch['name']] = $branch;
             }
 
-            $this->cache[$cacheKey] = $branches;
+            $cacheItem->set($branches)->expiresAfter($this->cacheLifetime);
+            $this->cache->save($cacheItem);
         }
 
-        return $this->cache[$cacheKey];
+        return $cacheItem->get();
     }
 
     /**
@@ -132,9 +195,11 @@ class Crawler implements LoggerAwareInterface
      */
     private function getTree(int $projectId, ?string $ref): array
     {
-        $cacheKey = 'tree:' . $projectId . ':' . $ref;
+        $cacheKey = 'tree.' . $projectId . '.' . md5($ref);
 
-        if (!isset($this->cache[$cacheKey])) {
+        $cacheItem = $this->cache->getItem($cacheKey);
+
+        if (!$cacheItem->isHit()) {
             $tree = [];
             foreach ($this->repositoriesApi->tree($projectId, [
                 'ref' => $ref
@@ -142,10 +207,11 @@ class Crawler implements LoggerAwareInterface
                 $tree[$item['path']] = $item;
             }
 
-            $this->cache[$cacheKey] = $tree;
+            $cacheItem->set($tree)->expiresAfter($this->cacheLifetime);
+            $this->cache->save($cacheItem);
         }
 
-        return $this->cache[$cacheKey];
+        return $cacheItem->get();
     }
 
     /**
