@@ -1,0 +1,12 @@
+version: '3'
+services:
+  php:
+    build: ./docker/php
+    volumes:
+    - "./composer.json:/opt/project/composer.json"
+    - "./composer.lock:/opt/project/composer.lock"
+    - "./config.local.php:/opt/project/config.local.php"
+    - "./src:/opt/project/src"
+    - "./vendor:/opt/project/vendor"
+    - "./local/cache:/opt/project/local/cache"
+    - "./example:/opt/project/example"

@@ -1,4 +1,10 @@
 # Gitlab crawler
+An experimental crawler for Gitlab repositories. 
+
+## Requirements
+- PHP 7.1 or higher
+- Composer
+
 ## Installation
 1. Download or clone this repository
 2. Run `composer install` in the repository
