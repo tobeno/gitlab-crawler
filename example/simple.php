@@ -1,19 +1,22 @@
 <?php
+
 namespace Tobeno\GitlabCrawler;
 
 /**
  * @var \Gitlab\Client $client
  * @var string $cachePath
+ * @var array $config
  */
 use Monolog\Handler\StreamHandler;
+use Monolog\Logger;
 use Symfony\Component\Cache\Adapter\FilesystemAdapter;
 use Tobeno\GitlabCrawler\Crawler\Expression\FileCrawlerExpression;
 use Tobeno\GitlabCrawler\Crawler\FileCrawler;
 
 require __DIR__.'/setup.php';
 
-$logger = new \Monolog\Logger('app');
-$logger->pushHandler(new StreamHandler('php://stdout', \Monolog\Logger::DEBUG));
+$logger = new Logger('app');
+$logger->pushHandler(new StreamHandler('php://stdout', Logger::DEBUG));
 
 $cache = new FilesystemAdapter('', 0, $cachePath);
 //$cache->clear();
@@ -21,17 +24,10 @@ $cache = new FilesystemAdapter('', 0, $cachePath);
 $crawler = new FileCrawler($client, $cache);
 $crawler->setLogger($logger);
 
-$expression = FileCrawlerExpression::create(
-    'tobeno/test*',
-    'master',
-    ['composer.json', 'application/composer.json']
-);
+$expression = $config['crawler_expression'];
 
 $files = $crawler->crawl($expression);
 
-$composerDefinitions = [];
 foreach ($files as $file) {
-    $composerDefinitions[$file->getProjectName()] = json_decode($file->getContents(), true);
+    echo $file->getProjectName().': '.$file->getContents().PHP_EOL;
 }
-
-var_dump($composerDefinitions);

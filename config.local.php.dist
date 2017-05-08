@@ -1,5 +1,6 @@
 <?php
 return [
     'gitlab_api_url' => 'https://gitlab.com/api/v3/',
-    'gitlab_api_token' => ''
+    'gitlab_api_token' => '',
+    'crawler_expression' => 'tobeno/test*:master:composer.json|application/composer.json'
 ];

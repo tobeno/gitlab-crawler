@@ -102,9 +102,12 @@ class FileCrawler implements LoggerAwareInterface, FileCrawlerInterface
      */
     public function crawl($expression): \Traversable
     {
-
         if (is_string($expression)) {
             $expression = FileCrawlerExpression::parse($expression);
+        }
+
+        if (!($expression instanceof FileCrawlerExpression)) {
+            throw new \InvalidArgumentException('Unsupported expression given.');
         }
 
         $this->log('Crawling '.$expression);
