@@ -73,6 +73,8 @@ composer.phar
 
 # === Project ===
 
+/local
+
 /config.local.php
 
 tests/_output/*
