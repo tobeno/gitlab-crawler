@@ -291,10 +291,10 @@ class FileCrawler implements LoggerAwareInterface, FileCrawlerInterface
         $setKeys = array_keys($set);
 
         foreach ($patterns as $singlePattern) {
-            $singlePattern = str_replace('*', '.*', preg_quote($singlePattern));
+            $singlePattern = str_replace('\*', '.*', preg_quote($singlePattern));
 
             foreach ($setKeys as $setKey) {
-                if (preg_match('~'.$singlePattern.'~', $setKey)) {
+                if (preg_match('~^'.$singlePattern.'$~', $setKey)) {
                     $match = $set[$setKey];
 
                     $matches[] = $match;

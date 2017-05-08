@@ -24,7 +24,11 @@ $cache = new FilesystemAdapter('', 0, $cachePath);
 $crawler = new FileCrawler($client, $cache);
 $crawler->setLogger($logger);
 
-$expression = $config['crawler_expression'];
+$expression = FileCrawlerExpression::create(
+    $config['gitlab_project'],
+    $config['gitlab_branch'],
+    'composer.json'
+);
 
 $files = $crawler->crawl($expression);
 

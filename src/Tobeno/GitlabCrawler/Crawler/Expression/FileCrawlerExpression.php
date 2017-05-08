@@ -118,6 +118,8 @@ class FileCrawlerExpression
     {
         if (is_string($part)) {
             $part = explode(self::FALLBACK_SEPARATOR, $part);
+        }elseif(!is_array($part)){
+            throw new \InvalidArgumentException('Invalid expression part given.');
         }
 
         return $part;
