@@ -71,6 +71,9 @@ $RECYCLE.BIN/
 composer.phar
 /vendor/
 
+# PhpStorm
+/.idea
+
 # === Project ===
 
 /local
